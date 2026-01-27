@@ -173,6 +173,21 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
         print('🔄 FCM Token refreshed');
         _registerFCMToken(newToken);
       });
+      
+      // Listen for foreground messages
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        print('🔔 Foreground FCM message: ${message.data}');
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🔔 FCM gautas: ${message.data['command'] ?? 'test'}'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      });
     }
   }
   
@@ -385,6 +400,27 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
                     ),
                   ),
                 ),
+                if (_fcmToken != null) ..[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: _fcmToken!));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ FCM Token nukopijuotas!'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Kopijuoti FCM Token'),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 Card(
                   child: Padding(
@@ -405,8 +441,8 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
                         if (_fcmRegistered) ...[
                           const SizedBox(height: 8),
                           const Divider(),
-                          const Text('✓ FCM Wake-up aktyvuotas', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                        ],
+                          const Text('✓ FCM Wake-up aktyvuotas', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),                          const SizedBox(height: 4),
+                          const Text('Device ID: default', style: TextStyle(fontSize: 12, color: Colors.grey)),                        ],
                       ],
                     ),
                   ),
