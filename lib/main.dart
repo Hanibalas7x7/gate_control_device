@@ -13,8 +13,26 @@ import 'gate_control_service.dart';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('🔥 FCM Wake-up: ${message.data}');
-  // Service will handle commands via polling
+  print('🔥 ========================================');
+  print('🔥 FCM Wake-up received!');
+  print('🔥 Data: ${message.data}');
+  print('🔥 ========================================');
+  
+  // Check if service is running
+  try {
+    final isRunning = await FlutterForegroundTask.isRunningService;
+    print('🔥 Service running: $isRunning');
+    
+    if (isRunning) {
+      // Send data to service to trigger immediate check
+      FlutterForegroundTask.sendDataToTask({'action': 'check_now', 'source': 'fcm'});
+      print('🔥 Sent immediate check trigger to service');
+    } else {
+      print('⚠️ Service NOT running - commands will be missed!');
+    }
+  } catch (e) {
+    print('❌ Error in FCM handler: $e');
+  }
 }
 
 void main() async {

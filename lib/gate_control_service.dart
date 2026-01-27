@@ -329,4 +329,23 @@ class GateControlTaskHandler extends TaskHandler {
     // Open app when notification is tapped
     FlutterForegroundTask.launchApp('/');
   }
+  
+  @override
+  void onReceiveData(Object data) {
+    // Receive data from FCM background handler
+    developer.log('📨 ========================================');
+    developer.log('📨 Data received from main isolate');
+    developer.log('📨 Data: $data');
+    developer.log('📨 ========================================');
+    
+    if (data is Map && data['action'] == 'check_now') {
+      developer.log('⚡ FCM triggered immediate check!');
+      // Trigger immediate command check
+      _checkPendingCommands().then((_) {
+        developer.log('⚡ Immediate check completed');
+      }).catchError((e) {
+        developer.log('❌ Error in immediate check: $e');
+      });
+    }
+  }
 }
