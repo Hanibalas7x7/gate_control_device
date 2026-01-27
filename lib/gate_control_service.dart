@@ -55,7 +55,14 @@ class GateControlTaskHandler extends TaskHandler {
           .select()
           .eq('status', 'pending')
           .eq('device_id', 'default')
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: true)
+          .timeout(
+            Duration(seconds: 10),
+            onTimeout: () {
+              developer.log('⚠️ Query timeout - network issue');
+              return [] as dynamic;
+            },
+          );
       
       final commands = response as List<dynamic>;
       
