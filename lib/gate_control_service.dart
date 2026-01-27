@@ -234,7 +234,7 @@ class GateControlTaskHandler extends TaskHandler {
         smsMessage = 'Miltegona: užsakymo kodas $orderCode.\n'
             'Procesai: smėliavimas – $smeliavimas; gruntavimas – $gruntavimas; dažymas – "$spalva".'
             '${terminas != null ? '\nTerminas: $terminas.' : ''}\n'
-            'Sekimas: miltegona.lt/sekimas';
+            'Sekimas: https://miltegona.lt/sekimas/?code=$orderCode';
       }
       
       developer.log('📱 SMS Message:\n$smsMessage');
