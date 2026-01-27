@@ -1,22 +1,5 @@
-// INSTRUKCIJOS: Firebase Setup
-// ============================
-// 
-// 1. Eiti į Firebase Console: https://console.firebase.google.com
-// 2. Sukurti naują projektą arba naudoti esamą
-// 3. Pridėti Android app:
-//    - Package name: com.example.gate_control_device
-//    - Atsisiųsti google-services.json
-//    - Įdėti į android/app/ folderį
-// 
-// 4. Install FlutterFire CLI:
-//    dart pub global activate flutterfire_cli
-// 
-// 5. Configure Firebase:
-//    flutterfire configure
-// 
-// 6. Tai sugeneruos šį failą automatiškai
-//
-// LAIKINAI - placeholder config (pakeisti su tikrais duomenimis)
+// File generated from google-services.json
+// Project: gate-control-device
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
@@ -57,22 +40,21 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // TODO: Replace with actual Firebase config from Firebase Console
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_API_KEY_HERE',
-    appId: 'YOUR_APP_ID_HERE',
-    messagingSenderId: 'YOUR_SENDER_ID_HERE',
-    projectId: 'YOUR_PROJECT_ID_HERE',
-    storageBucket: 'YOUR_STORAGE_BUCKET_HERE',
+    apiKey: 'AIzaSyDVKTaiJLDNZcD4Pq1bhbvVZtPUbQZnHUE',
+    appId: '1:420596464288:android:6fd659860fffc776f567c5',
+    messagingSenderId: '420596464288',
+    projectId: 'gate-control-device',
+    storageBucket: 'gate-control-device.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY_HERE',
-    appId: 'YOUR_IOS_APP_ID_HERE',
-    messagingSenderId: 'YOUR_SENDER_ID_HERE',
-    projectId: 'YOUR_PROJECT_ID_HERE',
-    storageBucket: 'YOUR_STORAGE_BUCKET_HERE',
-    iosClientId: 'YOUR_IOS_CLIENT_ID_HERE',
+    apiKey: 'AIzaSyDVKTaiJLDNZcD4Pq1bhbvVZtPUbQZnHUE',
+    appId: '1:420596464288:ios:YOUR_IOS_APP_ID',
+    messagingSenderId: '420596464288',
+    projectId: 'gate-control-device',
+    storageBucket: 'gate-control-device.firebasestorage.app',
     iosBundleId: 'com.example.gateControlDevice',
   );
 }
+

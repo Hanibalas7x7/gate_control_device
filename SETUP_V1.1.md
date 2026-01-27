@@ -20,12 +20,14 @@
 
 ### 1. Firebase Setup
 
-#### A. Sukurti Firebase projektą
+#### A. Firebase projektas
 1. Eiti į [Firebase Console](https://console.firebase.google.com)
-2. Spausti **"Create a project"** arba pasirinkti esamą
-3. Įvesti projekto pavadinimą (pvz: `gate-control`)
-4. (Nebūtina) Google Analytics - galima išjungti arba palikti
-5. Spausti **"Create project"**
+2. **Naudoti esamą "gate control device" projektą** ✅
+   
+   Arba sukurti naują:
+   - Spausti **"Create a project"**
+   - Įvesti pavadinimą
+   - (Nebūtina) Google Analytics
 
 **Pastaba:** Cloud Messaging jau įjungtas automatiškai! Nereikia papildomų veiksmų.
 
@@ -51,33 +53,16 @@
 
 ### 2. Android Konfigūracija
 
-Atidaryti `android/build.gradle.kts` ir pridėti:
+**✅ Jau padaryta!** Gradle failai jau sukonfigūruoti su Firebase:
+- `android/build.gradle.kts` - pridėtas google-services plugin
+- `android/app/build.gradle.kts` - pridėtas Firebase dependency
 
-```kotlin
-buildscript {
-    dependencies {
-        classpath("com.google.gms:google-services:4.4.0")
-    }
-}
-```
+### 3. Firebase Options
 
-Atidaryti `android/app/build.gradle.kts` ir pridėti:
-
-```kotlin
-plugins {
-    id("com.google.gms.google-services")
-}
-```
-
-### 3. FlutterFire CLI Setup
-
-```bash
-# Install FlutterFire CLI
-dart pub global activate flutterfire_cli
-
-# Configure Firebase (sugeneruos firebase_options.dart)
-flutterfire configure --project=your-firebase-project-id
-```
+**✅ Jau padaryta!** `lib/firebase_options.dart` sukonfigūruotas su projekto duomenimis:
+- Project ID: `gate-control-device`
+- Sender ID: `420596464288`
+- API Key ir kiti parametrai iš `google-services.json`
 
 ### 4. Supabase Setup
 
@@ -107,6 +92,17 @@ CREATE POLICY "Users can manage their own tokens"
 
 #### B. Deploy Edge Function
 
+**Per Supabase Dashboard (paprasčiausias būdas):**
+
+1. Eiti į [Supabase Dashboard](https://supabase.com/dashboard)
+2. Pasirinkti savo projektą
+3. **Edge Functions** → **Deploy a new function**
+4. Function name: `gate-notify`
+5. Nukopijuoti kodą iš `supabase/functions/gate-notify/index.ts`
+6. Paste į editorių
+7. Deploy
+
+**Arba per CLI (jei turite įdiegtą):**
 ```bash
 cd supabase/functions
 supabase functions deploy gate-notify
@@ -114,21 +110,30 @@ supabase functions deploy gate-notify
 
 #### C. Nustatyti Secrets
 
-Supabase reikia Service Account JSON failo turinio:
+**1. Gauti Service Account JSON iš Firebase:**
+- Firebase Console → Project Settings (⚙️) → **Service accounts**
+- Spausti **"Generate new private key"**
+- Download JSON failą
 
-```bash
-# Atidaryti Service Account JSON failą ir nukopijuoti visą turinį
-# Pavyzdys: cat gate-control-firebase-adminsdk-xxxxx.json
+**2. Set Secret per Supabase Dashboard:**
+1. Supabase Dashboard → **Project Settings** → **Edge Functions**
+2. Section **"Function Secrets"**
+3. Spausti **"Add secret"**
+4. Name: `FIREBASE_SERVICE_ACCOUNT`
+5. Value: Atidaryti JSON failą ir **nukopijuoti visą turinį**
+6. Save
 
-# Set kaip Supabase secret (visą JSON objektą)
-supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"your-project",...}'
+**Pavyzdys kaip turėtų atrodyti JSON:**
+```json
+{
+  "type": "service_account",
+  "project_id": "gate-control-device",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-xxxxx@gate-control-device.iam.gserviceaccount.com",
+  ...
+}
 ```
-
-**Arba per Supabase Dashboard:**
-1. Supabase Dashboard → Project Settings → Edge Functions
-2. Secrets → Add new secret
-3. Name: `FIREBASE_SERVICE_ACCOUNT`
-4. Value: Įklijuoti visą JSON failą turinį
 
 ### 5. Testing
 
