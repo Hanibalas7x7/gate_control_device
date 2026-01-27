@@ -22,8 +22,12 @@
 
 #### A. Sukurti Firebase projektą
 1. Eiti į [Firebase Console](https://console.firebase.google.com)
-2. Sukurti naują projektą arba naudoti esamą
-3. Įjungti **Cloud Messaging**
+2. Spausti **"Create a project"** arba pasirinkti esamą
+3. Įvesti projekto pavadinimą (pvz: `gate-control`)
+4. (Nebūtina) Google Analytics - galima išjungti arba palikti
+5. Spausti **"Create project"**
+
+**Pastaba:** Cloud Messaging jau įjungtas automatiškai! Nereikia papildomų veiksmų.
 
 #### B. Pridėti Android app
 1. Firebase Console → Project Settings → Add app → Android
@@ -31,10 +35,19 @@
 3. Atsisiųsti `google-services.json`
 4. Įdėti failą į `android/app/google-services.json`
 
-#### C. Gauti FCM Server Key
-1. Firebase Console → Project Settings → Cloud Messaging
-2. Copy **Server Key** (legacy) arba **Cloud Messaging API key**
-3. Išsaugoti - reikės Supabase Edge Function
+#### C. Gauti Service Account Key (FCM V1 API)
+**Legacy API deprecated - naudojame naują V1 API**
+
+1. Firebase Console → **Project Settings** (⚙️ icon)
+2. Tab **"Service accounts"**
+3. Spausti **"Generate new private key"**
+4. Atsisiųsti JSON failą (pvz: `gate-control-firebase-adminsdk-xxxxx.json`)
+5. **Saugoti šį failą!** - reikės Supabase
+
+**Sender ID:**
+- Tabs → **Cloud Messaging**
+- Nukopijuoti **Sender ID** (pvz: `420596464288`)
+- Reikės `flutterfire configure`
 
 ### 2. Android Konfigūracija
 
@@ -101,9 +114,21 @@ supabase functions deploy gate-notify
 
 #### C. Nustatyti Secrets
 
+Supabase reikia Service Account JSON failo turinio:
+
 ```bash
-supabase secrets set FCM_SERVER_KEY=your_fcm_server_key_from_firebase
+# Atidaryti Service Account JSON failą ir nukopijuoti visą turinį
+# Pavyzdys: cat gate-control-firebase-adminsdk-xxxxx.json
+
+# Set kaip Supabase secret (visą JSON objektą)
+supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"your-project",...}'
 ```
+
+**Arba per Supabase Dashboard:**
+1. Supabase Dashboard → Project Settings → Edge Functions
+2. Secrets → Add new secret
+3. Name: `FIREBASE_SERVICE_ACCOUNT`
+4. Value: Įklijuoti visą JSON failą turinį
 
 ### 5. Testing
 

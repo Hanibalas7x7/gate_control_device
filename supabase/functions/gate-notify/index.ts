@@ -1,8 +1,9 @@
-// Gate Notify Edge Function
-// Šis Edge Function priima užklausas ir siunčia FCM notifikaciją į Android įrenginį
+// Gate Notify Edge Function v1.1
+// FCM V1 API implementation with Service Account authentication
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.1/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,25 +79,75 @@ serve(async (req) => {
       )
     }
 
-    // Send FCM notification
-    const fcmServerKey = Deno.env.get('FCM_SERVER_KEY')!
+    // Get Firebase Service Account credentials
+    const serviceAccountJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT')!
+    const serviceAccount = JSON.parse(serviceAccountJson)
+    
+    // Generate OAuth2 access token using JWT
+    const jwt = await create(
+      { alg: "RS256", typ: "JWT" },
+      {
+        iss: serviceAccount.client_email,
+        scope: "https://www.googleapis.com/auth/firebase.messaging",
+        aud: "https://oauth2.googleapis.com/token",
+        iat: getNumericDate(0),
+        exp: getNumericDate(60 * 60), // 1 hour
+      },
+      await crypto.subtle.importKey(
+        "pkcs8",
+        new TextEncoder().encode(serviceAccount.private_key),
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["sign"]
+      )
+    )
+    
+    // Exchange JWT for access token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+    })
+    
+    const { access_token } = await tokenResponse.json()
+    
+    if (!access_token) {
+      console.error('❌ Failed to get access token')
+      return new Response(
+        JSON.stringify({ error: 'Failed to authenticate with Firebase' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    console.log('✅ Got OAuth2 access token')
+    
+    // Send FCM V1 API notification
+    const projectId = serviceAccount.project_id
+    const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`
     
     const fcmPayload = {
-      to: tokenData.fcm_token,
-      priority: 'high',
-      data: {
-        commandId: commandData.id.toString(),
-        command,
-        phoneNumber: phoneNumber || '',
-        message: message || '',
+      message: {
+        token: tokenData.fcm_token,
+        data: {
+          commandId: commandData.id.toString(),
+          command,
+          phoneNumber: phoneNumber || '',
+          message: message || '',
+        },
+        android: {
+          priority: 'high',
+        },
       },
     }
 
-    const fcmResponse = await fetch('https://fcm.googleapis.com/fcm/send', {
+    const fcmResponse = await fetch(fcmUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `key=${fcmServerKey}`,
+        'Authorization': `Bearer ${access_token}`,
       },
       body: JSON.stringify(fcmPayload),
     })

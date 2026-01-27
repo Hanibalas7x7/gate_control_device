@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "420596464288",
+    "project_id": "gate-control-device",
+    "storage_bucket": "gate-control-device.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:420596464288:android:6fd659860fffc776f567c5",
+        "android_client_info": {
+          "package_name": "com.example.gate_control_device"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVKTaiJLDNZcD4Pq1bhbvVZtPUbQZnHUE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
