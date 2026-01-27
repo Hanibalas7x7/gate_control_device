@@ -71,7 +71,7 @@ void main() async {
     ),
     iosNotificationOptions: const IOSNotificationOptions(),
     foregroundTaskOptions: ForegroundTaskOptions(
-      eventAction: ForegroundTaskEventAction.repeat(15000),
+      eventAction: ForegroundTaskEventAction.repeat(60000), // 60s - FCM handles instant, this is backup
       autoRunOnBoot: true,
       autoRunOnMyPackageReplaced: true,
       allowWakeLock: true,

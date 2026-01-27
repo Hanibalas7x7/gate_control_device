@@ -295,7 +295,7 @@ class GateControlTaskHandler extends TaskHandler {
   @override
   Future<void> onRepeatEvent(DateTime timestamp) async {
     try {
-      // Periodic check every 15 seconds for pending commands
+      // Periodic backup check every 60 seconds (FCM handles instant notifications)
       await _checkPendingCommands();
       
       FlutterForegroundTask.updateService(
