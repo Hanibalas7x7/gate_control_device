@@ -24,39 +24,14 @@ serve(async (req) => {
   }
 
   try {
-    const { command, phoneNumber, message, deviceId } = await req.json() as GateCommand
+    const { command, commandId, deviceId } = await req.json() as any
+
+    console.log('📥 Received request:', { command, commandId, deviceId })
 
     // Create Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
-
-    // Insert command into database
-    const { data: commandData, error: dbError } = await supabase
-      .from('gate_commands')
-      .insert({
-        command,
-        phone_number: phoneNumber,
-        message,
-        device_id: deviceId || 'default',
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single()
-
-    if (dbError) {
-      console.error('Database error:', dbError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to insert command', details: dbError.message }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    console.log('✅ Command inserted:', commandData)
 
     // Get FCM token from device_tokens table
     const { data: tokenData, error: tokenError } = await supabase
@@ -69,11 +44,11 @@ serve(async (req) => {
       console.error('❌ FCM token not found:', tokenError)
       return new Response(
         JSON.stringify({ 
-          warning: 'Command inserted but FCM token not found',
-          commandId: commandData.id 
+          error: 'FCM token not found for device',
+          deviceId 
         }),
         { 
-          status: 200, 
+          status: 404, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
@@ -82,6 +57,18 @@ serve(async (req) => {
     // Get Firebase Service Account credentials
     const serviceAccountJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT')!
     const serviceAccount = JSON.parse(serviceAccountJson)
+    
+    // Convert PEM private key to ArrayBuffer for crypto.subtle
+    const pemKey = serviceAccount.private_key
+    const pemHeader = "-----BEGIN PRIVATE KEY-----"
+    const pemFooter = "-----END PRIVATE KEY-----"
+    const pemContents = pemKey
+      .replace(pemHeader, "")
+      .replace(pemFooter, "")
+      .replace(/\s/g, "")
+    
+    // Base64 decode
+    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
     
     // Generate OAuth2 access token using JWT
     const jwt = await create(
@@ -95,7 +82,7 @@ serve(async (req) => {
       },
       await crypto.subtle.importKey(
         "pkcs8",
-        new TextEncoder().encode(serviceAccount.private_key),
+        binaryDer,
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
         false,
         ["sign"]
@@ -132,10 +119,8 @@ serve(async (req) => {
       message: {
         token: tokenData.fcm_token,
         data: {
-          commandId: commandData.id.toString(),
-          command,
-          phoneNumber: phoneNumber || '',
-          message: message || '',
+          commandId: String(commandId || ''),
+          command: String(command || ''),
         },
         android: {
           priority: 'high',
@@ -159,7 +144,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           error: 'FCM notification failed',
-          commandId: commandData.id,
+          commandId,
           details: fcmResult 
         }),
         { 
@@ -174,7 +159,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        commandId: commandData.id,
+        commandId,
         fcmResult 
       }),
       { 
@@ -185,7 +170,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('❌ Error:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 

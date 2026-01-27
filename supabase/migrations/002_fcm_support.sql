@@ -46,6 +46,39 @@ BEGIN
   ) THEN
     ALTER TABLE gate_commands ADD COLUMN device_id TEXT DEFAULT 'default';
   END IF;
+  
+  -- Pridėti SMS laukus (compatibility su Miltegona_Manager)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'gate_commands' 
+    AND column_name = 'phone_number'
+  ) THEN
+    ALTER TABLE gate_commands ADD COLUMN phone_number VARCHAR(20);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'gate_commands' 
+    AND column_name = 'sms_message'
+  ) THEN
+    ALTER TABLE gate_commands ADD COLUMN sms_message TEXT;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'gate_commands' 
+    AND column_name = 'order_code'
+  ) THEN
+    ALTER TABLE gate_commands ADD COLUMN order_code VARCHAR(5);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'gate_commands' 
+    AND column_name = 'sms_type'
+  ) THEN
+    ALTER TABLE gate_commands ADD COLUMN sms_type TEXT;
+  END IF;
 END $$;
 
 -- 6. Sukurti index device_id

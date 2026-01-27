@@ -1,4 +1,4 @@
-﻿import 'dart:developer' as developer;
+import 'dart:developer' as developer;
 import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -13,13 +13,14 @@ void startGateControlService() {
 }
 
 class GateControlTaskHandler extends TaskHandler {
-  RealtimeChannel? _channel;
   SupabaseClient? _supabase;
+  DateTime? _lastCheck;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     developer.log('🚀 ========================================');
-    developer.log('🚀 Gate Control Service Started');
+    developer.log('🚀 Gate Control Service Started (v1.1 Hybrid)');
+    developer.log('🚀 FCM + Polling Architecture');
     developer.log('🚀 ========================================');
     
     // Initialize Supabase in the isolate
@@ -31,75 +32,62 @@ class GateControlTaskHandler extends TaskHandler {
       );
       _supabase = Supabase.instance.client;
       developer.log('✅ Supabase initialized and client ready');
+      
+      // Immediate check on startup
+      await _checkPendingCommands();
     } catch (e) {
       developer.log('❌ Error initializing Supabase: $e');
       return;
     }
-    
-    _setupRealtimeListener();
   }
 
-  void _setupRealtimeListener() {
+  Future<void> _checkPendingCommands() async {
     if (_supabase == null) {
-      developer.log('❌ Cannot setup listener: Supabase client is null');
+      developer.log('❌ Cannot check commands: Supabase client is null');
       return;
     }
     
     try {
-      developer.log('🔧 Setting up realtime channel...');
-      _channel = _supabase!.channel('gate_commands');
+      developer.log('🔍 Checking for pending commands...');
       
-      developer.log('🔧 Configuring postgres changes listener...');
-      _channel!.onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'gate_commands',
-        callback: (payload) {
-          developer.log('🔔 ========================================');
-          developer.log('🔔 REALTIME EVENT RECEIVED!');
-          developer.log('🔔 Payload: ${payload.newRecord}');
-          developer.log('🔔 ========================================');
+      final response = await _supabase!
+          .from('gate_commands')
+          .select()
+          .eq('status', 'pending')
+          .eq('device_id', 'default')
+          .order('created_at', ascending: true);
+      
+      final commands = response as List<dynamic>;
+      
+      if (commands.isEmpty) {
+        developer.log('✅ No pending commands');
+        return;
+      }
+      
+      developer.log('📋 Found ${commands.length} pending command(s)');
+      
+      for (final commandData in commands) {
+        try {
+          final command = commandData['command'] as String;
+          final id = commandData['id'] as int;
           
-          final status = payload.newRecord['status'] as String?;
-          final command = payload.newRecord['command'] as String?;
-          final id = payload.newRecord['id'];
+          developer.log('📋 Processing command: $command (ID: $id)');
           
-          developer.log('📋 Status: $status');
-          developer.log('📋 Command: $command');
-          developer.log('📋 ID: $id');
-          
-          if (status == 'pending' && command == 'open_gate') {
-            developer.log('✅ Conditions met! Handling gate command...');
-            _handleGateCommand(id as int);
-          } else if (status == 'pending' && command == 'send_sms') {
-            developer.log('✅ SMS command received! Handling SMS...');
-            _handleSmsCommand(id as int, payload.newRecord);
-          } else {
-            developer.log('⚠️ Conditions NOT met - ignoring command');
-            developer.log('   status == "pending"? ${status == 'pending'}');
-            developer.log('   command type: $command');
+          if (command == 'open_gate') {
+            await _handleGateCommand(id);
+          } else if (command == 'send_sms') {
+            await _handleSmsCommand(id, commandData);
           }
-        },
-      );
-      
-      developer.log('🔧 Subscribing to channel...');
-      _channel!.subscribe((status, error) {
-        developer.log('📡 Channel subscription status: $status');
-        if (error != null) {
-          developer.log('❌ Subscription error: $error');
+        } catch (commandError) {
+          developer.log('❌ Error processing individual command: $commandError');
+          // Continue with next command even if one fails
         }
-        if (status == RealtimeSubscribeStatus.subscribed) {
-          developer.log('✅ Successfully subscribed to gate_commands channel!');
-        } else if (status == RealtimeSubscribeStatus.closed) {
-          developer.log('❌ Channel closed!');
-        } else if (status == RealtimeSubscribeStatus.channelError) {
-          developer.log('❌ Channel error!');
-        }
-      });
+      }
       
-      developer.log('✅ Realtime listener setup complete');
+      _lastCheck = DateTime.now();
     } catch (e) {
-      developer.log('❌ Error setting up realtime: $e');
+      developer.log('❌ Error checking pending commands: $e');
+      // Don't crash service on query error
     }
   }
 
@@ -299,17 +287,27 @@ class GateControlTaskHandler extends TaskHandler {
 
   @override
   Future<void> onRepeatEvent(DateTime timestamp) async {
-    // Periodic check - keep service alive
-    FlutterForegroundTask.updateService(
-      notificationTitle: 'Vartų Valdymas',
-      notificationText: 'Klausomasi komandų... (${DateTime.now().toString().substring(11, 19)})',
-    );
+    try {
+      // Periodic check every 15 seconds for pending commands
+      await _checkPendingCommands();
+      
+      FlutterForegroundTask.updateService(
+        notificationTitle: 'Vartų Valdymas',
+        notificationText: 'Klausomasi komandų... (${DateTime.now().toString().substring(11, 19)})',
+      );
+    } catch (e) {
+      developer.log('❌ Error in onRepeatEvent: $e');
+      // Don't crash - continue running
+      FlutterForegroundTask.updateService(
+        notificationTitle: 'Vartų Valdymas',
+        notificationText: 'Klaida - bandoma iš naujo...',
+      );
+    }
   }
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
-    developer.log('Gate Control Service Stopped');
-    await _channel?.unsubscribe();
+    developer.log('🛑 Gate Control Service Stopped');
   }
 
   @override
