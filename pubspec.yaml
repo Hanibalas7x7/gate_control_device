@@ -12,7 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.0.4
   flutter_foreground_task: ^8.0.0
-  flutter_phone_direct_caller: ^2.1.1
+  android_intent_plus: ^5.2.0
   permission_handler: ^11.0.1
 
 dev_dependencies:

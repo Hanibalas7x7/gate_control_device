@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,7 +11,7 @@ void main() async {
   // Initialize Supabase
   await Supabase.initialize(
     url: 'https://xyzttzqvbescdpihvyfu.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enR0enF2YmVzY2RwaWh2eWZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzA1MzYzODQsImV4cCI6MjA0NjExMjM4NH0.qQjJKzZb7x1n1T_xh9TWE42_PZqbMOMaHMmxvUXRnv4',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5enR0enF2YmVzY2RwaWh2eWZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NTQ5OTMsImV4cCI6MjA2OTEzMDk5M30.OpIs65YShePgpV2KG4Uqjpkj3RDNv12Rj9eLudveWQY',
   );
   
   // Initialize foreground task
@@ -19,8 +20,9 @@ void main() async {
       channelId: 'gate_control_service',
       channelName: 'Vartų Valdymo Servisas',
       channelDescription: 'Klausomasi vartų atidarymo komandų',
-      channelImportance: NotificationChannelImportance.LOW,
-      priority: NotificationPriority.LOW,
+      channelImportance: NotificationChannelImportance.MIN, // Minimali svarba - rodo tik statusbar'e
+      priority: NotificationPriority.MIN, // Minimali pirmenybė
+      visibility: NotificationVisibility.VISIBILITY_SECRET, // Slapta - nerodo lock screen'e
     ),
     iosNotificationOptions: const IOSNotificationOptions(),
     foregroundTaskOptions: ForegroundTaskOptions(
@@ -42,6 +44,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Gate Control Device',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -65,6 +68,48 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
   void initState() {
     super.initState();
     _checkServiceStatus();
+    _setupTaskDataCallback();
+  }
+  
+  void _setupTaskDataCallback() {
+    FlutterForegroundTask.addTaskDataCallback((data) async {
+      // Handle data from foreground service
+      final dataMap = data as Map<String, dynamic>;
+      
+      if (dataMap['action'] == 'send_sms') {
+        final phoneNumber = dataMap['phoneNumber'] as String;
+        final message = dataMap['message'] as String;
+        final commandId = dataMap['commandId'] as int;
+        
+        print('📱 [MAIN] Received SMS request from service');
+        print('📱 [MAIN] Phone: $phoneNumber');
+        print('📱 [MAIN] Message: $message');
+        
+        try {
+          const platform = MethodChannel('com.example.gate_control_device/sms');
+          await platform.invokeMethod('sendSmsBroadcast', {
+            'phoneNumber': phoneNumber,
+            'message': message,
+          });
+          print('📱 [MAIN] SMS broadcast sent successfully');
+          
+          // Update command status to completed
+          await Supabase.instance.client
+              .from('gate_commands')
+              .update({'status': 'completed'})
+              .eq('id', commandId);
+          print('📱 [MAIN] Command marked as completed');
+        } catch (e) {
+          print('📱 [MAIN] Error sending SMS: $e');
+          
+          // Mark command as failed
+          await Supabase.instance.client
+              .from('gate_commands')
+              .update({'status': 'failed'})
+              .eq('id', commandId);
+        }
+      }
+    });
   }
 
   Future<void> _checkServiceStatus() async {
@@ -75,15 +120,41 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
   }
 
   Future<void> _requestPermissions() async {
+    // Request multiple phone-related permissions
     final phoneStatus = await Permission.phone.request();
+    final smsStatus = await Permission.sms.request();
+    final smsSendStatus = await Permission.sms.request(); // SEND_SMS
     final notificationStatus = await Permission.notification.request();
     
-    if (!phoneStatus.isGranted || !notificationStatus.isGranted) {
+    // Log permission statuses
+    print('📱 Phone permission: $phoneStatus');
+    print('💬 SMS permission: $smsStatus');
+    print('📤 SMS send permission: $smsSendStatus');
+    print('🔔 Notification permission: $notificationStatus');
+    
+    if (!phoneStatus.isGranted || !smsStatus.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('SVARBU: Reikalingi leidimai skambinti ir siųsti SMS! Phone: $phoneStatus, SMS: $smsStatus'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Nustatymai',
+              textColor: Colors.white,
+              onPressed: () => openAppSettings(),
+            ),
+          ),
+        );
+      }
+    }
+    
+    if (!notificationStatus.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Reikalingi leidimai skambinti ir rodyti pranešimus'),
-            backgroundColor: Colors.red,
+            content: Text('Reikalingas leidimas rodyti pranešimus'),
+            backgroundColor: Colors.orange,
           ),
         );
       }

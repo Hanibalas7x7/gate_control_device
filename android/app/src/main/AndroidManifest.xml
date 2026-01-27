@@ -2,6 +2,10 @@
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.WRITE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -45,6 +49,31 @@
         <receiver
             android:name="com.pravera.flutter_foreground_task.service.RestartReceiver"
             android:enabled="true"
+            android:exported="false" />
+
+        <!-- SMS Receiver -->
+        <receiver
+            android:name=".SmsReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.gate_control_device.SEND_SMS"/>
+            </intent-filter>
+        </receiver>
+        
+        <!-- SMS Sender Service -->
+        <service
+            android:name=".SmsSenderService"
+            android:enabled="true"
+            android:exported="false" />
+        
+        <!-- SMS Sender Activity (transparent, auto-close) -->
+        <activity
+            android:name=".SmsSenderActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
             android:exported="false" />
             
         <meta-data
