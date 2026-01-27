@@ -54,7 +54,7 @@ class GateControlTaskHandler extends TaskHandler {
           .from('gate_commands')
           .select()
           .eq('status', 'pending')
-          .eq('device_id', 'default')
+          // Listen to ALL device_ids (not just 'default') - allows controlling access per device_id
           .order('created_at', ascending: true)
           .timeout(
             Duration(seconds: 10),
