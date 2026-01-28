@@ -264,7 +264,10 @@ class GateControlTaskHandler extends TaskHandler {
           // Update command status to completed
           await _supabase!
               .from('gate_commands')
-              .update({'status': 'completed'})
+              .update({
+                'status': 'completed',
+                'sms_message': smsMessage,
+              })
               .eq('id', commandId);
           developer.log('✅ Command marked as completed');
           
