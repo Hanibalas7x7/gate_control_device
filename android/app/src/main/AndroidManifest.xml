@@ -15,6 +15,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     
     <application
         android:label="Gate Control"
@@ -77,6 +78,22 @@
             android:taskAffinity=""
             android:launchMode="singleInstance"
             android:exported="false" />
+        
+        <!-- Service Start Activity (transparent, auto-start service from FCM) -->
+        <activity
+            android:name=".ServiceStartActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="START_SERVICE_FROM_FCM" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
             
         <meta-data
             android:name="flutterEmbedding"

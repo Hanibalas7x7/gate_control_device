@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import 'service_logger.dart';
 
 const String gatePhoneNumber = '+37069922987';
 
@@ -34,14 +36,14 @@ class GateControlTaskHandler extends TaskHandler {
       developer.log('✅ Supabase initialized and client ready');
       
       // Immediate check on startup
-      await _checkPendingCommands();
+      await _checkPendingCommands(source: 'startup');
     } catch (e) {
       developer.log('❌ Error initializing Supabase: $e');
       return;
     }
   }
 
-  Future<void> _checkPendingCommands() async {
+  Future<void> _checkPendingCommands({String source = 'polling'}) async {
     if (_supabase == null) {
       developer.log('❌ Cannot check commands: Supabase client is null');
       return;
@@ -81,8 +83,10 @@ class GateControlTaskHandler extends TaskHandler {
           developer.log('📋 Processing command: $command (ID: $id)');
           
           if (command == 'open_gate') {
+            await ServiceLogger.log('GATE_COMMAND', details: 'ID: $id, Source: $source');
             await _handleGateCommand(id);
           } else if (command == 'send_sms') {
+            await ServiceLogger.log('SMS_COMMAND', details: 'ID: $id, Phone: ${commandData['phone_number'] ?? 'unknown'}, Source: $source');
             await _handleSmsCommand(id, commandData);
           }
         } catch (commandError) {
@@ -299,7 +303,7 @@ class GateControlTaskHandler extends TaskHandler {
   Future<void> onRepeatEvent(DateTime timestamp) async {
     try {
       // Periodic backup check every 60 seconds (FCM handles instant notifications)
-      await _checkPendingCommands();
+      await _checkPendingCommands(source: 'polling');
       
       FlutterForegroundTask.updateService(
         notificationTitle: 'Vartų Valdymas',
@@ -318,11 +322,23 @@ class GateControlTaskHandler extends TaskHandler {
   @override
   Future<void> onDestroy(DateTime timestamp) async {
     developer.log('🛑 Gate Control Service Stopped');
+    ServiceLogger.logSync('SERVICE_STOPPED', details: 'onDestroy called at ${DateFormat('HH:mm:ss').format(timestamp)}');
   }
 
   @override
-  void onNotificationButtonPressed(String id) {
+  void onNotificationButtonPressed(String id) async {
     if (id == 'stop') {
+      developer.log('🛑 User pressed STOP button');
+      
+      try {
+        // Try to log with timeout - wait max 200ms
+        await ServiceLogger.log('SERVICE_STOP_REQUESTED', details: 'User pressed notification stop button')
+            .timeout(const Duration(milliseconds: 200));
+        developer.log('✅ Stop log written');
+      } catch (e) {
+        developer.log('⚠️ Stop log timeout/error: $e');
+      }
+      
       FlutterForegroundTask.stopService();
     }
   }
@@ -342,9 +358,10 @@ class GateControlTaskHandler extends TaskHandler {
     developer.log('📨 ========================================');
     
     if (data is Map && data['action'] == 'check_now') {
-      developer.log('⚡ FCM triggered immediate check!');
+      final source = (data['source'] ?? 'fcm').toString();
+      developer.log('⚡ FCM triggered immediate check! Source: $source');
       // Trigger immediate command check
-      _checkPendingCommands().then((_) {
+      _checkPendingCommands(source: source).then((_) {
         developer.log('⚡ Immediate check completed');
       }).catchError((e) {
         developer.log('❌ Error in immediate check: $e');

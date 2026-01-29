@@ -123,7 +123,7 @@ serve(async (req) => {
           command: String(command || ''),
         },
         android: {
-          priority: 'high',
+          priority: 'high', // ✅ Wake device even in Doze mode
         },
       },
     }

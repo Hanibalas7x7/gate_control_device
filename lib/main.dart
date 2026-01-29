@@ -6,17 +6,36 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import 'firebase_options.dart';
 import 'gate_control_service.dart';
+import 'service_logger.dart';
+import 'service_logs_screen.dart';
 
-// FCM background handler - ensures service stays alive
+// FCM background handler - ensures service stays alive and restarts if needed
+// ⚠️ Android 12+ restrictions: FGS start from background only allowed if:
+//    - High-priority FCM received within last few seconds
+//    - User interaction occurred recently
+//    - Other specific exemptions (exact alarm, etc.)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('🔥 ========================================');
-  print('🔥 FCM Wake-up received!');
-  print('🔥 Data: ${message.data}');
-  print('🔥 ========================================');
+  
+  // CRITICAL: Log immediately to see if handler runs AT ALL
+  print('🔥🔥🔥 ========================================');
+  print('🔥🔥🔥 FCM BACKGROUND HANDLER TRIGGERED!!!');
+  print('🔥🔥🔥 Time: ${DateTime.now()}');
+  print('🔥🔥🔥 Data: ${message.data}');
+  print('🔥🔥🔥 ========================================');
+  
+  // Log FCM receipt
+  try {
+    await ServiceLogger.logFCMReceived(message.data['command'] ?? 'unknown');
+    print('🔥 Logged FCM receipt');
+  } catch (e) {
+    print('❌ Failed to log FCM: $e');
+  }
   
   // Check if service is running
   try {
@@ -28,7 +47,43 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       FlutterForegroundTask.sendDataToTask({'action': 'check_now', 'source': 'fcm'});
       print('🔥 Sent immediate check trigger to service');
     } else {
-      print('⚠️ Service NOT running - commands will be missed!');
+      // ⚠️ SERVICE NOT RUNNING - Start via transparent activity
+      print('⚠️ Service NOT running - FCM received, starting ServiceStartActivity...');
+      await ServiceLogger.log('SERVICE_NOT_RUNNING_FCM', details: 'FCM received but service dead - starting ServiceStartActivity');
+      
+      // Start transparent activity using AndroidIntent (bypasses method channel issues)
+      try {
+        print('🔄 Starting ServiceStartActivity via AndroidIntent...');
+        
+        final intent = AndroidIntent(
+          action: 'android.intent.action.VIEW',
+          package: 'com.example.gate_control_device',
+          componentName: 'com.example.gate_control_device.ServiceStartActivity',
+          flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+        );
+        
+        await intent.launch();
+        
+        print('✅ ServiceStartActivity launched via Intent');
+        await ServiceLogger.log('FCM_RESTART_SUCCESS', details: 'ServiceStartActivity started via AndroidIntent');
+        
+        // Wait for service to start
+        await Future.delayed(Duration(milliseconds: 1500));
+        
+        final isNowRunning = await FlutterForegroundTask.isRunningService;
+        
+        if (isNowRunning) {
+          print('✅✅✅ Service confirmed running!');
+          // Trigger immediate check
+          FlutterForegroundTask.sendDataToTask({'action': 'check_now', 'source': 'fcm'});
+          print('🔥 Sent immediate check trigger after restart');
+        } else {
+          print('⚠️ Service not yet running - check logs');
+        }
+      } catch (e) {
+        print('❌ Failed to start ServiceStartActivity: $e');
+        await ServiceLogger.log('FCM_RESTART_FAILED', details: 'ServiceStartActivity error: $e');
+      }
     }
   } catch (e) {
     print('❌ Error in FCM handler: $e');
@@ -37,6 +92,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Check if service was running (indicates crash/kill if not)
+  final wasServiceRunning = await FlutterForegroundTask.isRunningService;
+  
+  // Log app start with context
+  if (wasServiceRunning) {
+    await ServiceLogger.log('APP_OPENED', details: 'Service still running (normal open)');
+  } else {
+    await ServiceLogger.log('APP_OPENED_AFTER_KILL', details: 'Service was NOT running - app/service was killed');
+  }
   
   // Global error handler for crash recovery
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -120,7 +185,25 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
     _checkServiceStatus();
     _setupTaskDataCallback();
     _setupFCM();
+    _setupNativeCallListener();
     _autoStartServiceIfNeeded();
+  }
+  
+  void _setupNativeCallListener() {
+    // Listen for native method calls (from ServiceStartActivity)
+    const platform = MethodChannel('com.example.gate_control_device/sms');
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'autoStartService') {
+        print('🚀🚀🚀 Received autoStartService from native!');
+        final isRunning = await FlutterForegroundTask.isRunningService;
+        if (!isRunning) {
+          print('🔄 Starting service from native trigger...');
+          await _startService();
+        } else {
+          print('✅ Service already running');
+        }
+      }
+    });
   }
   
   Future<void> _autoStartServiceIfNeeded() async {
@@ -130,6 +213,7 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
     final isRunning = await FlutterForegroundTask.isRunningService;
     if (!isRunning) {
       print('⚠️ Service not running - auto-starting after crash/restart...');
+      await ServiceLogger.logServiceCrash();
       await _startService();
     } else {
       print('✅ Service already running');
@@ -147,12 +231,14 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
       final isRunning = await FlutterForegroundTask.isRunningService;
       if (!isRunning && _serviceRunning) {
         print('⚠️⚠️ Service crashed! Attempting restart...');
+        await ServiceLogger.logServiceCrash();
         setState(() {
           _serviceRunning = false;
         });
         
         // Try to restart
         await Future.delayed(Duration(seconds: 2));
+        await ServiceLogger.logServiceRestart();
         await _startService();
       }
       
@@ -207,11 +293,34 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
           );
         }
       });
+      
+      // Listen for notification taps (when app opened from notification)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        print('📱 App opened from notification: ${message.data}');
+        
+        // Service should auto-start in _autoStartServiceIfNeeded
+        // But force check and start if not running
+        Future.delayed(Duration(seconds: 1), () async {
+          final isRunning = await FlutterForegroundTask.isRunningService;
+          if (!isRunning) {
+            print('🔄 Starting service after notification tap...');
+            await _startService();
+          }
+        });
+      });
+      
+      // Check if app was opened from terminated state by notification
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) {
+        print('📱 App launched from notification: ${initialMessage.data}');
+        // _autoStartServiceIfNeeded will handle service start
+      }
     }
   }
   
   Future<void> _registerFCMToken(String token) async {
     try {
+      // Register for 'default' device_id
       await Supabase.instance.client
           .from('device_tokens')
           .upsert({
@@ -221,11 +330,21 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
           },
           onConflict: 'device_id');
       
+      // Register for 'gate_opener_1' device_id (used by Miltegona Manager)
+      await Supabase.instance.client
+          .from('device_tokens')
+          .upsert({
+            'device_id': 'gate_opener_1',
+            'fcm_token': token,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          onConflict: 'device_id');
+      
       setState(() {
         _fcmRegistered = true;
       });
       
-      print('✅ FCM token registered in Supabase');
+      print('✅ FCM token registered in Supabase (default + gate_opener_1)');
     } catch (e) {
       print('❌ Error registering FCM token: $e');
     }
@@ -345,6 +464,7 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
   Future<void> _startService() async {
     await _requestPermissions();
     
+    await ServiceLogger.logServiceStart();
     await FlutterForegroundTask.startService(
       serviceId: 256,
       notificationTitle: 'Vartų Valdymas',
@@ -362,6 +482,7 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
   }
 
   Future<void> _stopService() async {
+    await ServiceLogger.logServiceStop();
     await FlutterForegroundTask.stopService();
     setState(() {
       _serviceRunning = false;
@@ -418,6 +539,56 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
                       style: const TextStyle(fontSize: 18),
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ServiceLogsScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.history),
+                          label: const Text('Service Logs'),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.blue.shade700, width: 2),
+                            foregroundColor: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          await ServiceLogger.log('TEST_LOG', details: 'Manual test at ${DateTime.now()}');
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('✅ Test log written!'),
+                                backgroundColor: Colors.green,
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.bug_report, size: 20),
+                        label: const Text('Test'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 if (_fcmToken != null) ...[
                   const SizedBox(height: 16),
