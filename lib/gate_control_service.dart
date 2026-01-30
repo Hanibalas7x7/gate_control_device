@@ -17,6 +17,9 @@ void startGateControlService() {
 class GateControlTaskHandler extends TaskHandler {
   SupabaseClient? _supabase;
   DateTime? _lastCheck;
+  bool _isShuttingDown = false;
+  // Track active operations for cleanup
+  final List<Function> _pendingOperations = [];
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -44,6 +47,12 @@ class GateControlTaskHandler extends TaskHandler {
   }
 
   Future<void> _checkPendingCommands({String source = 'polling'}) async {
+    // CRITICAL: Skip if shutting down
+    if (_isShuttingDown) {
+      developer.log('⚠️ Skipping command check - service is shutting down');
+      return;
+    }
+    
     if (_supabase == null) {
       developer.log('❌ Cannot check commands: Supabase client is null');
       return;
@@ -52,6 +61,9 @@ class GateControlTaskHandler extends TaskHandler {
     try {
       developer.log('🔍 Checking for pending commands...');
       
+      // CRITICAL: Check shutdown before query
+      if (_isShuttingDown) return;
+      
       final response = await _supabase!
           .from('gate_commands')
           .select()
@@ -59,12 +71,15 @@ class GateControlTaskHandler extends TaskHandler {
           // Listen to ALL device_ids (not just 'default') - allows controlling access per device_id
           .order('created_at', ascending: true)
           .timeout(
-            Duration(seconds: 10),
+            Duration(seconds: 5), // Reduced from 10 to 5
             onTimeout: () {
               developer.log('⚠️ Query timeout - network issue');
               return [] as dynamic;
             },
           );
+      
+      // CRITICAL: Check shutdown after query
+      if (_isShuttingDown) return;
       
       final commands = response as List<dynamic>;
       
@@ -76,6 +91,12 @@ class GateControlTaskHandler extends TaskHandler {
       developer.log('📋 Found ${commands.length} pending command(s)');
       
       for (final commandData in commands) {
+        // CRITICAL: Stop processing if shutting down
+        if (_isShuttingDown) {
+          developer.log('⚠️ Stopping command processing - shutdown initiated');
+          break;
+        }
+        
         try {
           final command = commandData['command'] as String;
           final id = commandData['id'] as int;
@@ -301,6 +322,12 @@ class GateControlTaskHandler extends TaskHandler {
 
   @override
   Future<void> onRepeatEvent(DateTime timestamp) async {
+    // CRITICAL: Skip if shutting down
+    if (_isShuttingDown) {
+      developer.log('⚠️ Skipping repeat event - service is shutting down');
+      return;
+    }
+    
     try {
       // Periodic backup check every 60 seconds (FCM handles instant notifications)
       await _checkPendingCommands(source: 'polling');
@@ -321,8 +348,39 @@ class GateControlTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
-    developer.log('🛑 Gate Control Service Stopped');
-    ServiceLogger.logSync('SERVICE_STOPPED', details: 'onDestroy called at ${DateFormat('HH:mm:ss').format(timestamp)}');
+    developer.log('🛑 ========================================');
+    developer.log('🛑 SHUTDOWN INITIATED');
+    developer.log('🛑 ========================================');
+    
+    // CRITICAL: Set shutdown flag IMMEDIATELY
+    _isShuttingDown = true;
+    
+    try {
+      // Fast logging with strict timeout
+      await ServiceLogger.log('SERVICE_STOPPED', 
+          details: 'onDestroy at ${DateFormat('HH:mm:ss').format(timestamp)}')
+        .timeout(const Duration(milliseconds: 500), 
+          onTimeout: () {
+            developer.log('⚠️ Log write timeout - proceeding with shutdown');
+          });
+    } catch (e) {
+      developer.log('⚠️ Log error: $e');
+    }
+    
+    // Cancel all pending operations
+    developer.log('🧹 Canceling ${_pendingOperations.length} pending operations');
+    _pendingOperations.clear();
+    
+    // Cleanup Supabase client
+    try {
+      _supabase = null;
+      developer.log('✅ Supabase client cleaned up');
+    } catch (e) {
+      developer.log('⚠️ Cleanup error: $e');
+    }
+    
+    developer.log('✅ Service stopped cleanly');
+    developer.log('🛑 ========================================');
   }
 
   @override
@@ -330,15 +388,23 @@ class GateControlTaskHandler extends TaskHandler {
     if (id == 'stop') {
       developer.log('🛑 User pressed STOP button');
       
+      // CRITICAL: Set shutdown flag immediately
+      _isShuttingDown = true;
+      
       try {
-        // Try to log with timeout - wait max 200ms
-        await ServiceLogger.log('SERVICE_STOP_REQUESTED', details: 'User pressed notification stop button')
-            .timeout(const Duration(milliseconds: 200));
+        // Try to log with strict timeout - wait max 300ms
+        await ServiceLogger.log('SERVICE_STOP_REQUESTED', 
+            details: 'User pressed notification stop button')
+          .timeout(const Duration(milliseconds: 300), 
+            onTimeout: () {
+              developer.log('⚠️ Stop log timeout - proceeding anyway');
+            });
         developer.log('✅ Stop log written');
       } catch (e) {
-        developer.log('⚠️ Stop log timeout/error: $e');
+        developer.log('⚠️ Stop log error: $e');
       }
       
+      // Stop service immediately
       FlutterForegroundTask.stopService();
     }
   }
@@ -356,6 +422,12 @@ class GateControlTaskHandler extends TaskHandler {
     developer.log('📨 Data received from main isolate');
     developer.log('📨 Data: $data');
     developer.log('📨 ========================================');
+    
+    // CRITICAL: Ignore if shutting down
+    if (_isShuttingDown) {
+      developer.log('⚠️ Ignoring data - service is shutting down');
+      return;
+    }
     
     if (data is Map && data['action'] == 'check_now') {
       final source = (data['source'] ?? 'fcm').toString();

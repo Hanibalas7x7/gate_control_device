@@ -12,6 +12,7 @@ import 'firebase_options.dart';
 import 'gate_control_service.dart';
 import 'service_logger.dart';
 import 'service_logs_screen.dart';
+import 'service_recovery_helper.dart';
 
 // FCM background handler - ensures service stays alive and restarts if needed
 // ⚠️ Android 12+ restrictions: FGS start from background only allowed if:
@@ -93,15 +94,27 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // CRITICAL: Clear any crash state before checking service
+  // This allows app to restart after Android crashes foreground service
+  print('🚑 ========================================');
+  print('🚑 APP STARTING - CHECKING FOR CRASH STATE');
+  print('🚑 ========================================');
+  
+  await ServiceRecoveryHelper.clearCrashState();
+  
   // Check if service was running (indicates crash/kill if not)
   final wasServiceRunning = await FlutterForegroundTask.isRunningService;
   
   // Log app start with context
   if (wasServiceRunning) {
-    await ServiceLogger.log('APP_OPENED', details: 'Service still running (normal open)');
+    await ServiceLogger.log('APP_OPENED', details: 'Service still running');
+    print('✅ Service was running');
   } else {
-    await ServiceLogger.log('APP_OPENED_AFTER_KILL', details: 'Service was NOT running - app/service was killed');
+    await ServiceLogger.log('APP_OPENED', details: 'Service not running (stopped by Android/user)');
+    print('ℹ️ Service not running - normal, FCM will wake up when needed');
   }
+  
+  print('🚑 ========================================');
   
   // Global error handler for crash recovery
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -207,39 +220,41 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
   }
   
   Future<void> _autoStartServiceIfNeeded() async {
-    // Auto-start service when app opens (helps after crash or restart)
-    await Future.delayed(Duration(seconds: 2));
+    // Check service status but DON'T auto-start
+    // Android may have stopped it to save battery - FCM will wake it up when needed
+    await Future.delayed(Duration(seconds: 1));
     
     final isRunning = await FlutterForegroundTask.isRunningService;
     if (!isRunning) {
-      print('⚠️ Service not running - auto-starting after crash/restart...');
-      await ServiceLogger.logServiceCrash();
-      await _startService();
+      print('ℹ️ Service not running - stopped by Android or user');
+      await ServiceLogger.log('SERVICE_NOT_RUNNING', details: 'Service stopped (normal) - FCM will wake up when needed');
+      setState(() {
+        _serviceRunning = false;
+      });
     } else {
       print('✅ Service already running');
+      setState(() {
+        _serviceRunning = true;
+      });
     }
     
-    // Start periodic health check
+    // Start periodic health check (monitoring only, no auto-restart)
     _startHealthCheck();
   }
   
   void _startHealthCheck() {
-    // Check service health every 30 seconds
+    // Monitor service health every 30 seconds (no auto-restart)
     Future.delayed(Duration(seconds: 30), () async {
       if (!mounted) return;
       
       final isRunning = await FlutterForegroundTask.isRunningService;
       if (!isRunning && _serviceRunning) {
-        print('⚠️⚠️ Service crashed! Attempting restart...');
-        await ServiceLogger.logServiceCrash();
+        print('ℹ️ Service stopped - Android may have stopped it to save battery');
+        await ServiceLogger.log('SERVICE_STOPPED_BY_SYSTEM', details: 'Service stopped (normal) - FCM will wake up when needed');
         setState(() {
           _serviceRunning = false;
         });
-        
-        // Try to restart
-        await Future.delayed(Duration(seconds: 2));
-        await ServiceLogger.logServiceRestart();
-        await _startService();
+        // DON'T auto-restart - let FCM wake it up when needed
       }
       
       // Continue health check
@@ -569,21 +584,61 @@ class _GateControlHomePageState extends State<GateControlHomePage> {
                       height: 48,
                       child: ElevatedButton.icon(
                         onPressed: () async {
-                          await ServiceLogger.log('TEST_LOG', details: 'Manual test at ${DateTime.now()}');
-                          if (mounted) {
+                          // Emergency recovery button
+                          final shouldRecover = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('🚨 Emergency Recovery'),
+                              content: const Text(
+                                'Ar tikrai norite atlikti pilną serviso atsigavimą?\n\n'
+                                'Tai sustabdys ir perkraus servisą.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Atšaukti'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Atgaivinti'),
+                                ),
+                              ],
+                            ),
+                          );
+                          
+                          if (shouldRecover == true && mounted) {
+                            setState(() {
+                              _serviceRunning = false;
+                            });
+                            
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('✅ Test log written!'),
-                                backgroundColor: Colors.green,
-                                duration: Duration(seconds: 1),
+                                content: Text('🚨 Atliekamas atsigavimas...'),
+                                backgroundColor: Colors.orange,
+                                duration: Duration(seconds: 3),
                               ),
                             );
+                            
+                            await ServiceRecoveryHelper.performFullRecovery();
+                            
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('✅ Atsigavimas baigtas! Paleiskite servisą.'),
+                                  backgroundColor: Colors.green,
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            }
                           }
                         },
-                        icon: const Icon(Icons.bug_report, size: 20),
-                        label: const Text('Test'),
+                        icon: const Icon(Icons.healing, size: 20),
+                        label: const Text('Recovery'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
                         ),
                       ),
