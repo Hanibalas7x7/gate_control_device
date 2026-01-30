@@ -42,15 +42,9 @@ Po crash'o **aplikacija nebegalėjo pasileisti** kol neišvalai crash būsenos.
 
 ### ✅ 3. AndroidManifest.xml
 
-```xml
-<service
-    android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-    android:foregroundServiceType="dataSync"
-    android:stopWithTaskRemovalAllowed="true"  <!-- PRIDĖTA -->
-    android:exported="false" />
-```
+~~Pridėtas `stopWithTaskRemovalAllowed="true"`~~ (Pašalinta - nesuderinama su žemesnėmis API)
 
-`stopWithTaskRemovalAllowed="true"` - leidžia Android sustabdyti servisą greitai.
+**Crash fix'as veikia be manifest pakeitimų** - pagrindinė logika yra kode (`_isShuttingDown` flag ir fast shutdown).
 
 ---
 
@@ -241,7 +235,6 @@ Visi events logginami:
 ✅ `_isShuttingDown` flag visiems handler'iams  
 ✅ Query timeout ≤ 5 sekundės  
 ✅ Stop logging ≤ 500ms timeout  
-✅ `stopWithTaskRemovalAllowed="true"` manifest  
 ✅ Crash state clearing app startup  
 ✅ Emergency recovery button (manual only)  
 ✅ Health monitoring (no auto-restart)  
