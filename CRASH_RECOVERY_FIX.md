@@ -179,6 +179,26 @@ Visi events logginami:
 2. Patikrinkite logs - turėtų sustoti per < 3 sekundes
 3. Neturėtų būti timeout errors
 
+### Diagnostiniai Taškai (Native Logging):
+
+⚠️ **Jei crash'as kartojasi**, reikia pridėti native logging:
+
+```kotlin
+// ForegroundService.kt arba plugin'e:
+
+1. onStartCommand() - log "SERVICE_START: reason={reason}"
+2. onTimeout() - log "SERVICE_TIMEOUT_CALLBACK"
+3. onDestroy() - log "SERVICE_ONDESTROY"
+4. stopSelf() - log "SERVICE_STOPSELF_CALLED"
+```
+
+**Ką tikrinti**:
+- ✅ `onDestroy()` iškviečiamas?
+- ✅ `stopSelf()` pasiekiamas?
+- ❌ Blokuojantys I/O tarp `onTimeout()` ir `stopSelf()`?
+- ❌ Dart isolate dar gyvas `onDestroy()` metu?
+- ❌ Start/Stop lenktynės (naujas start kol destroy vyksta)?
+
 ---
 
 ## Patobulinimai

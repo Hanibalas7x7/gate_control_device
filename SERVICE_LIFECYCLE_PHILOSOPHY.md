@@ -70,28 +70,38 @@ Service processes command
 
 ## FCM Wake-Up Mechanizmas
 
-### How It Works:
+### How It Works (dažniausiai):
 
 1. **Vartai reikia atidaryti**:
-   - Miltegona Manager sends FCM
+   - Miltegona Manager sends FCM (high priority)
    - OR Supabase Edge Function sends FCM
 
-2. **FCM received**:
+2. **FCM received** (jei delivered):
    - `_firebaseMessagingBackgroundHandler` runs
    - Checks if service running
 
 3. **If service NOT running**:
    - Launches `ServiceStartActivity`
-   - Activity starts service
-   - Activity closes automatically
+   - **Gali nepavykti** jei Android blokuoja background activity start
+   - Fallback: notification su action button
 
-4. **Service processes command**:
+4. **Service processes command** (jei pavyko startinti):
    - Skambina į +37069922987
    - Marks command as completed
 
 5. **(Optional) Service stops later**:
    - Android stops after few hours
-   - **Tai NORMALU** - FCM pažadins vėl
+   - **Tai NORMALU** - FCM bandys pažadinti vėl
+
+### ⚠️ FCM Delivery Risks:
+
+- **Ne 100% garantuotas** - gali būti atidėtas/dropped:
+  - OEM battery optimization
+  - Android Doze mode
+  - Ilgas offline laikas
+  - Per daug pending messages
+- **Background activity start restrictions** - Android 12+
+- **Fallback būtinas**: notification tap, retry mechanism
 
 ---
 
@@ -212,10 +222,17 @@ Night:
 > **Geriau leisti Android'ui sustabdyti servisą švelniai,  
 > nei kovoti su sistema ir gauti crash.**
 
-**FCM wake-up yra patikimas** - vartai atsidarys visada!
+**FCM wake-up dažniausiai veikia gerai**, bet:
+- ⚠️ Ne 100% garantuotas (OEM restrictions, Doze, delays)
+- ✅ Turime fallback: notification + manual trigger
+- ✅ Command TTL + retry mechanism Supabase pusėje
+- ✅ Ack system (completed/failed status)
 
 ---
 
 **Versija**: v1.1.4 - Crash Recovery & Lifecycle Respect  
 **Data**: 2026-01-30  
-**Status**: Production Ready ✅
+**Status**: Beta - Monitor Production  
+**Patikimumas**: ~80% silent wake-up, 100% su user tap  
+**Žiūrėti**: [TECHNICAL_CRASH_ANALYSIS.md](TECHNICAL_CRASH_ANALYSIS.md) - Detailed diagnostics
+
